@@ -60,7 +60,7 @@ The project directory is organized as follows:
 
 * Clone the repository to your local machine.
 * Install the required dependencies (listed in requirements.txt).
-* Use the provided notebooks to perform PTAL analysis on your dataset.
+* Use the provided notebooks in the given order to perform PTAL analysis on your dataset.
 
 
 
