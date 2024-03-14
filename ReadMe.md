@@ -34,10 +34,8 @@ Measurement of Public Transport Accessibility:
     1. Creation of PTAL maps for Jaipur, highlighting areas with different accessibility levels.
     1. Overlaying PTAL maps with population density data for a comprehensive view.
 
-1. Policy Implications: #TODO
+1. Policy Implications:
     1. Discussion of policy recommendations to enhance public transport accessibility in Jaipur.
-
-<img src="figures/overview.png" width="1200">
 
 ## Data Sources
 
@@ -60,7 +58,7 @@ The project directory is organized as follows:
 
 * Clone the repository to your local machine.
 * Install the required dependencies (listed in requirements.txt).
-* Use the provided notebooks to perform PTAL analysis on your dataset.
+* Use the provided notebooks in the given order to perform PTAL analysis on your dataset.
 
 
 
