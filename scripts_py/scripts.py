@@ -18,7 +18,11 @@ from shapely.geometry import Polygon
 from shapely.ops import nearest_points
 from shapely.prepared import prep
 from tqdm import tqdm
-
+from h3 import h3
+import pyproj
+from functools import partial
+from shapely.ops import transform
+from pyproj import Transformer
 
 def get_city_boundary(place_name, city_name='Jaipur District', boundary_name='Jaipur Municipal Corporation', plot=True):
     """
@@ -120,6 +124,68 @@ def create_grid(geometry, grid_cell_size=1000, plot=False, native_crs='EPSG:3264
 
     return grid
 
+def create_hex_grid(geometry, plot=False, native_crs='EPSG:32643'):
+
+    """
+    Partitions a geometry into H3 hexagons, calculates centroids in local CRS,
+    and returns a GeoDataFrame with geometries and centroids in 'EPSG:4326'.
+
+    Parameters:
+    - geometry: GeoSeries containing the geometry in native_crs.
+    - plot: bool, whether to plot the grid or not.
+    - native_crs: str, the original coordinate reference system for the geometry.
+    - local_crs: str, the local coordinate reference system for calculating centroids.
+
+    Returns:
+    - hex_grid: GeoDataFrame, the geometry partitioned into H3 hexagons with centroids, both in 'EPSG:4326'.
+    """
+    resolution = 8  # Approx. 1 km^2 per hexagon
+
+    # Transform to WGS 84 for H3 processing
+    geometry_wgs84 = geometry.to_crs(epsg=4326)
+
+    # Create Transformers for CRS transformations
+    transformer_to_local = Transformer.from_crs("EPSG:4326", native_crs, always_xy=True)
+    transformer_to_wgs84 = Transformer.from_crs(native_crs, "EPSG:4326", always_xy=True)
+
+    # Function to perform transformation using the transformers
+    def transform_geom(geom, transformer):
+        return transform(lambda x, y: transformer.transform(x, y), geom)
+
+    # Create an empty list to store hexagon polygons and their centroids
+    hex_polygons = []
+    centroid_points = []
+
+    for geom in geometry_wgs84:
+        if not geom.is_valid:
+            continue
+
+        # Get hexagons covering the geometry
+        hexes = h3.polyfill(geom.__geo_interface__, resolution, geo_json_conformant=True)
+        for hex in hexes:
+            # Convert each hex to a Polygon
+            polygon = Polygon(h3.h3_to_geo_boundary(hex, geo_json=True))
+            hex_polygons.append(polygon)
+
+            # Project hex to local CRS, calculate centroid, then project back to WGS 84
+            local_polygon = transform_geom(polygon, transformer_to_local)
+            centroid_local = local_polygon.centroid
+            centroid_wgs84 = transform_geom(centroid_local, transformer_to_wgs84)
+
+            centroid_points.append(centroid_wgs84)
+
+    # Create a GeoDataFrame from the polygons and centroids
+    hex_grid = gpd.GeoDataFrame(geometry=gpd.GeoSeries(hex_polygons, crs='EPSG:4326'))
+    hex_grid['POI'] = gpd.GeoSeries(centroid_points, crs='EPSG:4326')
+
+    if plot:
+        ax = hex_grid.plot(color='blue', alpha=0.3, edgecolor='k')
+        geometry.to_crs(epsg=4326).plot(ax=ax, color='red', alpha=0.5)
+        hex_grid['POI'].plot(ax=ax, color='yellow', marker='o', markersize=5)
+        plt.axis('off')
+        plt.show()
+
+    return hex_grid
 
 def get_address_from_coordinates(latitude, longitude):
     geolocator = Nominatim(user_agent="geoapiExercises")
