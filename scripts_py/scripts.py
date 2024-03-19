@@ -23,6 +23,13 @@ import pyproj
 from functools import partial
 from shapely.ops import transform
 from pyproj import Transformer
+import matplotlib.pyplot as plt
+import contextily as ctx
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+import matplotlib.colors as mcolors
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 def get_city_boundary(place_name, city_name='Jaipur District', boundary_name='Jaipur Municipal Corporation', plot=True):
     """
@@ -464,7 +471,13 @@ def visual_route_allocation(gdf, route_name, mapbox_token):
 
 def get_route_geometry(G, bus_stop, route_name, city_grid, plot=True):
     routes_dict = get_routes_dict(bus_stop)
-    bus_stop_nodes = bus_stop[bus_stop['sap_name'].isin(routes_dict[route_name])]
+
+    # Filter DataFrame based on specified route name in the 'routes' column
+    filtered_df = city_grid[city_grid['routes'].str.contains(route_name)]
+
+    # Extract unique 'sap_names' from the filtered DataFrame
+    duplicates_mask = filtered_df.duplicated(subset=['col1'], keep='first')
+    bus_stop_nodes = filtered_df[~duplicates_mask]
 
     # Initialize lists to store the latitude and longitude of the route points
     route_points = []
@@ -506,82 +519,52 @@ def get_route_geometry(G, bus_stop, route_name, city_grid, plot=True):
 
 
 def plot_bivariate_choropleth(gdf, route=None, plot_stops=None, color_legends=True):
-    """
-    Plot a bivariate choropleth map with optional overlay of a route and busy bus stops.
-
-    Parameters:
-    - gdf (geopandas.GeoDataFrame): GeoDataFrame containing the data for the choropleth map.
-    - route (geopandas.GeoDataFrame, optional): GeoDataFrame representing the route. Default is None.
-    - route_name (str, optional): Name of the route. Required if route is provided. Default is None.
-    - busy_bus_stops (geopandas.GeoDataFrame, optional): GeoDataFrame containing busy bus stops. Default is None.
-
-    Returns:
-    None
-
-    Notes:
-    - The input GeoDataFrames (gdf, route, and busy_bus_stops) should be in the same coordinate reference system (CRS).
-    - The function will plot the choropleth map, overlay the route and/or busy bus stops if provided, and display the map.
-    """
-
     gdf = gdf.to_crs(epsg=3857)
 
     # Plotting the choropleth map
-    fig, ax = plt.subplots(figsize=(10, 10), )
+    fig, ax = plt.subplots(figsize=(10, 10))
 
     # Define specific colors for each category
-    colors = {'3A': '#D9CFC6',
-              '2A': '#B7999C',
-              '1A': '#916A71',
-              '3B': '#DB9E9C',
-              '2B': '#B3756D',
-              '1B': '#925C59'}
-
+    colors = {'3A': '#D9CFC6', '2A': '#B7999C', '1A': '#916A71', '3B': '#DB9E9C', '2B': '#B3756D', '1B': '#925C59'}
     alpha = 0.8
 
     # Plot each category separately
     for category, color in colors.items():
         subset = gdf[gdf['bivariate_cat'] == category]
-        subset.plot(ax=ax, color=color, label=category, edgecolor='grey', alpha=alpha)
+        subset.plot(ax=ax, color=color, edgecolor='grey', alpha=alpha)
 
     ax.set_title('Accessibility Index vs Population Density')
     ax.set_axis_off()
 
     # Plot route if provided
-    if route is not None and type(route) is dict:
-        color_list = [Set1.colors[i % len(Set1.colors)] for i in range(len(route))]
-        route_legend_labels = []
-        route_dict = route
-        for i, (route_name, route_geo) in enumerate(route_dict.items()):
+    route_legend_items = []
+    if route is not None:
+        set1_colors = plt.get_cmap('Set1').colors  # Get colors from 'Set1' colormap
+        for idx, (route_name, route_geo) in enumerate(route.items()):
+            color = set1_colors[idx % len(set1_colors)]  # Cycle through 'Set1' colors
             route_geo = route_geo.to_crs(epsg=3857)
-            route_color = color_list[i % len(color_list)]  # Cycle through colors for each route
-            route_geo.plot(ax=ax, color=route_color, label=route_name)
-
-            # Add label to legend
-            route_legend_labels.append(route_name)
+            route_geo.plot(ax=ax, color=color, label=route_name)
+            route_legend_items.append(Line2D([0], [0], color=color, lw=2, label=route_name))
 
     # Plot busy bus stops if provided
-    if plot_stops is not None and type(plot_stops) is dict:
-        stop_colors = [Dark2.colors[i % len(Dark2.colors)] for i in range(len(plot_stops))]
-        stop_legend_labels = []
-        stops_dict = plot_stops
-        for i, (stops_label, stops_geo) in enumerate(stops_dict.items()):
+    stop_legend_items = []
+    if plot_stops is not None:
+        dark2_colors = plt.get_cmap('Dark2').colors  # Get colors from 'Dark2' colormap
+        for idx, (stops_label, stops_geo) in enumerate(plot_stops.items()):
+            color = dark2_colors[idx % len(dark2_colors)]  # Cycle through 'Dark2' colors
             stops_geo = stops_geo.to_crs(epsg=3857)
-            stop_color = stop_colors[i % len(stop_colors)]  # Cycle through colors for stops
-            stops_geo.plot(ax=ax, color=stop_color, markersize=50, label=stops_label)
+            stops_geo.plot(ax=ax, color=color, markersize=50, label=stops_label)
+            stop_legend_items.append(Line2D([0], [0], color=color, marker='o', linestyle='None', markersize=10, label=stops_label))
 
             # Annotate bus stop names
             for x, y, sap_name in zip(stops_geo.geometry.x, stops_geo.geometry.y, stops_geo['sap_name']):
                 ax.text(x, y, sap_name, fontsize=8, ha='right', va='bottom')
 
-            stop_legend_labels.append(stops_label)
+    # Combine all legend items
+    all_legend_items = route_legend_items + stop_legend_items
 
-    legend_labels = []
-    if route is not None:
-        legend_labels = legend_labels + route_legend_labels
-    if plot_stops is not None:
-        legend_labels = legend_labels + stop_legend_labels
-    if len(legend_labels) > 0:
-        ax.legend(labels=legend_labels, loc='lower right')
+    # Create the legend with custom items
+    ax.legend(handles=all_legend_items, loc='lower right')
 
     # Add a basemap
     provider = ctx.providers['OpenStreetMap']['Mapnik']
@@ -608,5 +591,4 @@ def plot_bivariate_choropleth(gdf, route=None, plot_stops=None, color_legends=Tr
         ax2.text(s='Population/Sq.km', x=0.1, y=-0.25)  # annotate x-axis
         ax2.text(s='PTAL', x=-0.25, y=0.1, rotation=90)  # annotate y-axis
         ax2.set_axis_off()
-
     plt.show()
